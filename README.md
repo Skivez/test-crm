@@ -1,93 +1,77 @@
-# test-crm
+# Объекты и задачи — мини-CRM для стройки
 
+Постановщик заводит объекты (стройки) и задачи по ним, исполнитель берёт задачи в работу и сдаёт на проверку. Каждая смена статуса попадает в историю.
 
+**Стек:** React 19 + TypeScript + Vite, Mantine, TanStack Query, Supabase (Postgres + Auth + RLS).
 
-## Getting started
+- [Как устроена система — для руководителя](docs/EXPLANATION.md)
+- [Решения и допущения](docs/DECISIONS.md)
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+## Где что лежит
 
 ```
-cd existing_repo
-git remote add origin https://gitlab.com/andre_skive/test-crm.git
-git branch -M main
-git push -uf origin main
+supabase/migrations/   схема БД, права, RLS, смена статусов, история (вся логика безопасности)
+scripts/seed.ts        демо-пользователи и данные (нужен service_role, запускается только локально)
+scripts/security-test.ts  56 проверок прав «в обход интерфейса» (только anon key + пароли)
+src/                   фронтенд
 ```
 
-## Integrate with your tools
+## Локальный запуск
 
-* [Set up project integrations](https://gitlab.com/andre_skive/test-crm/-/settings/integrations)
+Нужны Node.js 20+ и Docker.
 
-## Collaborate with your team
+```bash
+npm install
+npx supabase start          # поднимает локальный Supabase и применяет миграции
+npx supabase status         # API URL, anon key, service_role key
+```
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+Создайте два файла по образцу `.env.example` и `.env.seed.example`:
 
-## Test and Deploy
+- `.env.local` — `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (уходят в браузер, поэтому **только anon key**);
+- `.env.seed` — `SUPABASE_SERVICE_ROLE_KEY`, `SEED_PASSWORD` (нужны только скриптам на вашей машине).
 
-Use the built-in continuous integration in GitLab.
+Оба файла в `.gitignore`.
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+```bash
+npm run seed                # 2 постановщика, 2 исполнителя, 3 объекта, 6 задач в разных статусах
+npm run dev                 # http://localhost:5173
+npm run test:security       # проверка прав доступа через API
+```
 
-***
+`npm run seed -- --reset` пересоздаёт объекты и задачи.
 
-# Editing this README
+Демо-пользователи (пароль — `SEED_PASSWORD`):
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+| Email | Роль |
+|---|---|
+| manager@example.com | Постановщик |
+| manager2@example.com | Постановщик |
+| executor1@example.com | Исполнитель |
+| executor2@example.com | Исполнитель |
 
-## Suggestions for a good README
+## Развёртывание в облаке
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+1. Создайте проект на supabase.com и примените миграции:
+   ```bash
+   npx supabase link --project-ref <ref>
+   npx supabase db push
+   ```
+2. **Authentication → Sign In / Providers → Allow new users to sign up: выключить** (или `npx supabase config push`: в `supabase/config.toml` стоит `enable_signup = false`).
+3. Заполните `.env.local`/`.env.seed` значениями облачного проекта и запустите `npm run seed` и `npm run test:security`.
+4. Vercel: импортируйте репозиторий (фреймворк Vite) и задайте переменные `VITE_SUPABASE_URL` и `VITE_SUPABASE_ANON_KEY`. `vercel.json` отдаёт `index.html` на все пути SPA. В **Authentication → URL Configuration** укажите адрес сайта.
 
-## Name
-Choose a self-explaining name for your project.
+`service_role` никогда не задаётся в Vercel и не попадает во фронтенд.
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+## Как устроена защита
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+| Требование | Как сделано |
+|---|---|
+| Права на уровне БД | Всё закрыто от `anon`. `authenticated` получает права точечно (`GRANT`, вплоть до колонок), а строки фильтрует RLS на всех четырёх таблицах |
+| Исполнитель не видит чужое | `tasks`: `assignee_id = auth.uid()`; `objects`: только объекты, где есть его задачи; история — только по его задачам; профили — свой и постановщиков |
+| Переходы статусов в БД | Колонка `status` недоступна для `UPDATE` через API. Сменить статус можно только RPC `change_task_status()`: он проверяет роль, исполнителя, матрицу переходов и обязательный комментарий, блокирует строку (`FOR UPDATE`) и пишет историю. Триггер на `tasks` отклоняет смену статуса любым другим путём, даже от суперпользователя |
+| История не подделывается | На `task_status_history` выдан только `SELECT`. Записи создаёт сама база (триггер при создании задачи и RPC). Триггер запрещает `UPDATE`/`DELETE` всем; удалить её можно только каскадом вместе с задачей |
+| Регистрация закрыта | `enable_signup = false`, пользователей создаёт администратор. Роль хранится в `app_metadata`, который пользователь сам изменить не может |
+| Секреты | Во фронтенде только anon key. `service_role` лежит только в `.env.seed` (gitignore) для сида |
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+Кнопки действий в карточке задачи интерфейс получает из `task_available_transitions()`. Эта функция использует ту же матрицу переходов, что и проверка, поэтому интерфейс и база не могут разойтись.
