@@ -3,8 +3,13 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
 // .env.local — публичные настройки фронтенда (URL + anon key);
 // .env.seed — секреты только для локальных скриптов (service_role, пароль). Оба в .gitignore.
-config({ path: '.env.local', quiet: true })
-config({ path: '.env.seed', quiet: true })
+// ENV_FILE=.env.cloud — взять все настройки из одного файла (например, для облачного проекта).
+if (process.env.ENV_FILE) {
+  config({ path: process.env.ENV_FILE, quiet: true })
+} else {
+  config({ path: '.env.local', quiet: true })
+  config({ path: '.env.seed', quiet: true })
+}
 
 function required(name: string): string {
   const v = process.env[name]
