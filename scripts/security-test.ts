@@ -64,7 +64,8 @@ async function main() {
     denied('аноним не читает профили', await anon.from('profiles').select('*'))
     denied('аноним не вызывает смену статуса', await anon.rpc('change_task_status', { p_task_id: t1!.id, p_to: 'in_progress' }))
     const su = await anon.auth.signUp({ email: `intruder${Date.now()}@example.com`, password: 'Passw0rd!123' })
-    check('открытая регистрация отключена', !!su.error, su.error)
+    // Важна именно причина отказа: облако отклоняет и «невалидный» домен example.com, это не считается.
+    check('открытая регистрация отключена', su.error?.code === 'signup_disabled', su.error)
 
     console.log('\nИсполнитель: чтение')
     const e1Tasks = (await e1.from('tasks').select('id, assignee_id')).data ?? []
